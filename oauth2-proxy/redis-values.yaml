@@ -1,0 +1,5 @@
+architecture: "replication"
+#auth:
+        #password: "somerandomstring"
+replica:
+        replicaCount: 1

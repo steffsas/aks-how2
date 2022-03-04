@@ -1,0 +1,189 @@
+######## IMPORTANT ##########
+# Do only touch something in this file if you really know what you are doing! :)
+
+parameters:
+- name: production # name of the parameter; required
+  type: boolean # data type of the parameter; required
+  default: false
+
+stages:
+- stage: Docker 
+  displayName: Build and Push Docker Image
+  jobs:
+  - job: Build_Push
+    displayName: Build and Push Dockerimage
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    # build the docker image
+    - task: Docker@2
+      displayName: Build Docker Image
+      inputs:
+        command: build
+        containerRegistry: '$(azureAcrServiceConnection)'
+        repository: '$(dockerImageRepository)'
+        ${{ if eq(parameters.production, true) }}:
+          # the same tags are used in all applications
+          tags: |
+            production
+            latest
+            $(Build.BuildNumber)
+            prod-$(Build.BuildNumber)
+        ${{ if ne(parameters.production, true) }}:
+          # the same tags are used in all applications
+          tags: |
+            development
+            dev-$(Build.BuildNumber)
+
+    # push the built docker image to the repository
+    # in general, you do not need to change anything here
+    - task: Docker@2
+      displayName: Push Docker Image to Repository
+      inputs:
+        command: push
+        containerRegistry: '$(azureAcrServiceConnection)'
+        repository: '$(dockerImageRepository)'
+        ${{ if eq(parameters.production, true) }}:
+          # the same tags are used in all applications
+          tags: |
+            production
+            latest
+            $(Build.BuildNumber)
+            prod-$(Build.BuildNumber)
+        ${{ if ne(parameters.production, true) }}:
+          # the same tags are used in all applications
+          tags: |
+            development
+            dev-$(Build.BuildNumber)
+
+# every application runs at a very specific URL/Path, we will model this with another stage and
+# pass this information to Helm via a values.yaml file
+- stage: Prepare_Helm
+  displayName: Prepare Helm values.yaml
+  jobs:
+  - job: Prepare_Values
+    displayName: Prepare values.yaml
+    steps:
+    - task: CmdLine@2
+      displayName: Prepare values.yaml File
+      inputs:
+        workingDirectory: $(Build.ArtifactStagingDirectory)/
+        ${{ if eq(parameters.production, true) }}:
+          # build helm values.yaml for production environment
+          # please change the lines here so that your application runs in the production environment
+          # if you don't want your application to be accessible on the Internet, delete the Ingress part
+          script: |
+            echo \
+            "image:
+              repository: $(azureContainerRegistry)/$(dockerImageRepository)
+              tag: prod-$(Build.BuildNumber)
+            ingress:
+                annotations:
+                  kubernetes.io/ingress.class: "nginx"
+                  cert-manager.io/cluster-issuer: $(clusterIssuer)
+                  nginx.ingress.kubernetes.io/auth-signin: https://$(oauth2proxy)/oauth2/start?rd=https%3A%2F%2F$(hostname)
+                  nginx.ingress.kubernetes.io/auth-url: https://$(oauth2proxy)/oauth2/auth
+                hosts:
+                - host: $(hostname)
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                tls:
+                  - hosts: 
+                    - $(hostname)
+                    secretName: $(applicationName)-prod-cert" > values.yaml
+        ${{ if ne(parameters.production, true) }}:
+          # build helm values.yaml for development environment
+          # please change the lines here so that your application runs in the development environment
+          # if you don't want your application to be accessible on the Internet, delete the Ingress part
+          script: |
+            echo \
+            "image:
+              repository: $(azureContainerRegistry)/$(dockerImageRepository)
+              tag: dev-$(Build.BuildNumber)
+            ingress:
+                annotations:
+                  kubernetes.io/ingress.class: "nginx"
+                  cert-manager.io/cluster-issuer: $(clusterIssuer)
+                  nginx.ingress.kubernetes.io/auth-signin: https://dev.$(oauth2proxy)/oauth2/start?rd=https%3A%2F%2Fdev.$(hostname)
+                  nginx.ingress.kubernetes.io/auth-url: https://dev.$(oauth2proxy)/oauth2/auth
+                hosts:
+                - host: dev.$(hostname)
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                tls:
+                  - hosts: 
+                    - dev.$(hostname)
+                    secretName: $(applicationName)-dev-cert" > values.yaml
+    - task: CmdLine@2
+      displayName: Output created values.yaml File
+      inputs:
+        workingDirectory: $(Build.ArtifactStagingDirectory)/
+        script: 'ls -lah && cat values.yaml'
+    # publish the created values.yaml file as an artifact that can be used in a release
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)/values.yaml'
+        artifactName: 'prepared-chart-values'
+
+# in general, you do not need to change anything here
+- stage: Helm
+  displayName: Package, Push and Publish Helm Chart
+  jobs:
+  - job: Package_Push
+    displayName: Package Helm Chart
+    steps:
+
+    # install correct version of Helm
+    - task: HelmInstaller@1
+      displayName: Helm Install
+      inputs: 
+        helmVersionToInstall: 3.6.0 # from 3.7.0 there is no helm chart [...] command anymore, but HelmDeploy@0 currently relies on that    
+
+    # package Helm chart 
+    # the archive is stored as an artifact which is later used by the release pipeline!
+    - task: HelmDeploy@0
+      displayName: Helm Package
+      inputs:
+        command: package
+        chartPath: '$(helmChartPath)'
+        destination: '$(Build.ArtifactStagingDirectory)'
+        version: '$(Build.BuildNumber)'
+        # set the app-version of the chart s.t. we can see it in helm list --all-namespaces in the app version column
+        arguments: |
+          --app-version $(Build.BuildNumber)
+       
+    # push Helm chart to repository
+    - task: HelmDeploy@0
+      displayName: Push Helm Chart to Registry
+      inputs:
+        command: save
+        ${{ if eq(parameters.production, true) }}:
+          chartNameForACR: 'production/$(applicationName):$(Build.BuildNumber)' # azure automatically adds helm/ in front
+        ${{ if ne(parameters.production, true) }}:
+          chartNameForACR: 'development/$(applicationName):$(Build.BuildNumber)' # azure automatically adds helm/ in front
+        chartPathForACR: '$(helmChartPath)'
+        azureSubscriptionEndpointForACR: '$(azureResourceManagerConnection)'
+        azureResourceGroupForACR: '$(azureResourceGroup)'
+        azureContainerRegistry: '$(azureContainerRegistry)'          
+
+    # just output the folder's entries for logging purposes
+    - task: CmdLine@2
+      displayName: Output Artifact Folder
+      inputs:
+        workingDirectory: $(Build.ArtifactStagingDirectory)
+        script: 'ls -lah'
+
+    # rename chart archive to make life easier in release
+    - task: CmdLine@2
+      displayName: Rename Chart Archive
+      inputs:
+        workingDirectory: $(Build.ArtifactStagingDirectory)/
+        script: 'mv *.tgz chart.tgz'
+
+    # publish the build artifacts such that they can be used in the release pipeline
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)/'
+        artifactName: 'chart'

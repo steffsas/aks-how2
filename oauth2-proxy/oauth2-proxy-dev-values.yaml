@@ -1,0 +1,37 @@
+config:
+        clientID: "<your test client id>"
+        clientSecret: "<your client secret>"
+        cookieSecret: "<your cookie secret>"
+        cookieName: "_oauth2_proxy_dev"
+extraArgs:
+        provider: "azure"
+        azure-tenant: "<your test tenant>"
+        whitelist-domain: ".xxx.de" # adapt this to your domain
+        cookie-domain: ".xxx.de" # adapt this, this makes cookie available under whole domain
+        cookie-secure: true # securely store cookie in browser
+        cookie-samesite: none # security
+        cookie-httponly: true # security, no script is allowed to access cookies
+        cookie-refresh: 1h
+        skip-jwt-bearer-tokens: true # this is needed so allow jwt tokens, although the name is contradictory, see https://github.com/oauth2-proxy/oauth2-proxy/issues/1185
+        extra-jwt-issuers: "https://login.microsoftonline.com/<your test tenant>/v2.0=<your test client id>" # the endpoint where the token gets validated
+        silence-ping-logging: true # to have a clean log without logging healthchecks etc.
+        auth-logging: true
+        request-logging: true
+        set-authorization-header: true # needed for requests using Authorization baerer token
+sessionStorage:
+        type: "redis"
+        redis:
+                # password: "somerandomstring"
+                standalone:
+                        connectionUrl: "redis://oauth2-proxy-redis-master:6379"
+ingress:
+        enabled: true
+        hosts: 
+                - dev.auth.xxx.de
+        tls:
+                - hosts: 
+                        - dev.auth.xxx.de
+                  secretName: auth-dev-cert
+        annotations:
+                kubernetes.io/ingress.class: "nginx"
+                cert-manager.io/cluster-issuer: "letsencrypt-clusterissuer"

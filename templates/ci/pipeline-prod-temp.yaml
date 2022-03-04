@@ -1,0 +1,20 @@
+# the name of the pipeline run that is shown in Azure DevOps
+name: $(Date:yy.MM).$(Rev:r)
+
+# the trigger that defines when the pipeline is going to run
+# in this case, whenever something is pushed to main branch
+trigger:
+- main
+
+# whenever something is pushed to the main branch, the pipeline uses this repository (main)
+resources:
+- repo: self
+
+# the variables that are used in the pipeline run
+variables:
+  - template: variables.yaml
+
+extends:
+  template: pipeline-template.yaml
+  parameters:
+      production: true

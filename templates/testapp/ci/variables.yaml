@@ -1,0 +1,40 @@
+variables:
+  ##################
+  #### SPECIFIC ####
+  ##################
+
+  # please put your application name here
+  applicationName: 'testapp'
+
+  # please put the URL here where you application should be accessible
+  hostname: 'testapp.xxx.de'
+
+  ##################
+  #### GENERIC #####
+  ##################
+
+  # do only change values in this section if you know what you are doing :)
+  
+  # the name of the cluster issuer to get TLS certificates automatically from cert-manager
+  clusterIssuer: 'letsencrypt-clusterissuer'
+
+  # the URL where the oauth2-proxy is accessible, will automatically adapted to dev.<oauth2-proxy-url> 
+  # in the pipeline-template.yaml
+  oauth2proxy: auth.xxx.de
+
+  # required Azure information, like service connections and resource groups
+  azureAcrServiceConnection: '<some>-acr'
+  azureResourceManagerConnection: '<some service connection>'
+  azureContainerRegistry: '<acr>.azurecr.io'
+  azureResourceGroup: '<cluster resource name>'
+
+  # information of the Dockerfile's location in ACR
+  dockerImageRepository: '$(applicationName)'
+  
+  # in general, you would use the root directory of your application, 
+  # i.e. '$(Build.SourcesDirectory)/Dockerfile'
+  dockerFilePath: '$(Build.SourcesDirectory)/templates/testapp/Dockerfile'
+
+  # in general, you would use the root directory of your application, 
+  # i.e. '$(Build.SourcesDirectory)/chart'
+  helmChartPath: '$(Build.SourcesDirectory)/templates/testapp/chart'

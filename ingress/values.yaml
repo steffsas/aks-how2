@@ -1,0 +1,24 @@
+controller:
+  replicaCount: 1
+  nodeSelector:
+    beta.kubernetes.io/os: linux
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+  service:
+    loadBalancerIP: <your public ip address>
+  config:
+    plugins: transform
+  extraVolumeMounts:
+    - name: ingress
+      mountPath: /etc/nginx/lua/plugins
+  extraVolumes:
+    - name: ingress
+      persistentVolumeClaim:
+        claimName: cluster-ingress
+        readOnly: false
+  podSecurityContext:
+    fsGroup: 82
+podSecurityPolicy:
+  enabled: true
